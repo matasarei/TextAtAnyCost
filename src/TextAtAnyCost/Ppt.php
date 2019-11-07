@@ -1,15 +1,32 @@
 <?php
-// Чтение текста из PPT
-// Версия 0.3
-// Автор: Алексей Рембиш a.k.a Ramon
-// E-mail: alex@rembish.ru
-// Copyright 2009
 
-// Чтобы работать с doc, мы дожны уметь работать с WCBFF не так ли?
-require_once "cfb.php";
+namespace TextAtAnyCost;
 
-class ppt extends cfb {
-	public function parse() {
+/**
+ * Class Ppt
+ *
+ * @author Алексей Рембиш <alex@rembish.ru>
+ * @copyright 2009, Алексей Рембиш
+ * @version 0.3
+ * @package TextAtAnyCost
+ */
+class Ppt extends CompoundBinaryTextParser
+{
+    /**
+     * @param string $filename
+     *
+     * @return null|string
+     */
+    public static function ppt2text($filename)
+    {
+        return (new self($filename))->parse();
+    }
+
+    /**
+     * @return string|null
+     */
+	public function parse()
+    {
 		parent::parse();
 
 		// В файле обязан быть поток Current User.
@@ -30,9 +47,9 @@ class ppt extends cfb {
 		// В нём начинаем искать все UserEditAtom'ы, которые требуются нам для получения
 		// смещений до PersistDirectory.
 		$offsetLastEdit = $offsetToCurrentEdit;
-		$persistDirEntry = array();
+		$persistDirEntry = [];
 		$live = null;
-		$offsetPersistDirectory = array();
+		$offsetPersistDirectory = [];
 		do {
 			$userEditAtom = $this->getRecord($ppdStream, $offsetLastEdit, 0x0FF5);
 			$live = &$userEditAtom;
@@ -145,36 +162,65 @@ class ppt extends cfb {
 		}
 
 		// Возвращаем UTF-8 текст.
-		return html_entity_decode(iconv("windows-1251", "utf-8", $out), ENT_QUOTES, "UTF-8");
+		$text = html_entity_decode(iconv("windows-1251", "utf-8", $out), ENT_QUOTES, "UTF-8");
+
+		return empty($text) ? null : $text;
 	}
 
-	// Дополнительная функция, определяющая длину текущей внутренней структуры.
-	// Принимает на вход поток, из которого получать данные, смещение, по которому
-	// их читать и тип структуры, по которому проверять читаем ли мы правильную информацию.
-	private function getRecordLength($stream, $offset, $recType = null) {
+    /**
+     * Дополнительная функция, определяющая длину текущей внутренней структуры.
+     * Принимает на вход поток, из которого получать данные, смещение, по которому
+     * их читать и тип структуры, по которому проверять читаем ли мы правильную информацию.
+     *
+     * @param string $stream
+     * @param int $offset
+     * @param string|null $recType
+     *
+     * @return bool|float|int
+     */
+	private function getRecordLength($stream, $offset, $recType = null)
+    {
 		$rh = substr($stream, $offset, 8);
-		if (!is_null($recType) && $recType != $this->getShort(2, $rh))
-			return false;
+
+		if (!is_null($recType) && $recType != $this->getShort(2, $rh)) {
+            return false;
+        }
+
 		return $this->getLong(4, $rh);
 	}
-	// Получение типа текущей структуры в соответствии с "прейскурантом" от MS.
-	private function getRecordType($stream, $offset) {
+
+    /**
+     * Получение типа текущей структуры в соответствии с "прейскурантом" от MS.
+     *
+     * @param string $stream
+     * @param int $offset
+     *
+     * @return float|int
+     */
+	private function getRecordType($stream, $offset)
+    {
 		$rh = substr($stream, $offset, 8);
+
 		return $this->getShort(2, $rh);
 	}
-	// Получение записи из потока по смещению, возможно заданного типа. Внимание, заголовок
-	// назад не передаётся.
-	private function getRecord($stream, $offset, $recType = null) {
+
+    /**
+     * Получение записи из потока по смещению, возможно заданного типа. Внимание, заголовок назад не передаётся.
+     *
+     * @param string $stream
+     * @param int $offset
+     * @param string|null $recType
+     *
+     * @return bool|false|string
+     */
+	private function getRecord($stream, $offset, $recType = null)
+    {
 		$length = $this->getRecordLength($stream, $offset, $recType);
-		if ($length === false)
-			return false;
+
+		if ($length === false) {
+            return false;
+        }
+
 		return substr($stream, $offset + 8, $length);
 	}
-}
-
-// Для тех, кому не нужны классы :)
-function ppt2text($filename) {
-	$ppt = new ppt;
-	$ppt->read($filename);
-	return $ppt->parse();
 }

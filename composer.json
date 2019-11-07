@@ -1,0 +1,13 @@
+{
+  "name": "matasarei/text-at-any-cost",
+  "description": "Text at any cost: get text from any office document (DOC, DOCX, ODT, PDF and other).",
+  "homepage": "https://github.com/matasarei/text-at-any-cost",
+  "minimum-stability": "stable",
+  "type": "library",
+  "require": {
+    "php": ">=5.4"
+  },
+  "autoload": {
+    "psr-0": {"TextAtAnyCost": "src/"}
+  }
+}

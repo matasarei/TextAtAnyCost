@@ -1,27 +1,45 @@
 <?php
-// Чтение текста из DOC
-// Версия 0.4
-// Автор: Алексей Рембиш a.k.a Ramon
-// E-mail: alex@rembish.ru
-// Copyright 2009
 
-// Чтобы работать с doc, мы дожны уметь работать с WCBFF не так ли?
-require_once "cfb.php";
+namespace TextAtAnyCost;
 
-// Класс для работы с Microsoft Word Document (в народе doc), расширяет
-// Windows Compound Binary File Format. Давайте попробуем найти текст и
-// здесь
-class doc extends cfb {
-	// Функция parse расширяет родительскую функцию и на выходе получает
-	// текст из данного файла. Если что-то пошло не так - возвращает false
-	public function parse() {
+/**
+ * Class Doc
+ *
+ * @author Алексей Рембиш <alex@rembish.ru>
+ * @copyright 2009, Алексей Рембиш
+ * @version 0.4
+ * @package TextAtAnyCost
+ */
+class Doc extends CompoundBinaryTextParser
+{
+	/**
+	 * @param $filename
+	 *
+	 * @return string|null
+	 */
+	public static function doc2text($filename)
+	{
+		return (new self($filename))->parse();
+	}
+
+	/**
+	 * Функция parse расширяет родительскую функцию и на выходе получает
+	 * текст из данного файла. Если что-то пошло не так - возвращает false
+	 *
+	 * @return string|null
+	 */
+	public function parse()
+	{
 		parent::parse();
 
 		// Для чтения DOC'а нам нужны два потока - WordDocument и 0Table или
 		// 1Table в зависимости от ситуации. Для начала найдћм первый - в нћм
 		// (потоке) разбросаны кусочки текста, которые нам нужной поймать.
 		$wdStreamID = $this->getStreamIdByName("WordDocument");
-		if ($wdStreamID === false) { return false; }
+
+		if ($wdStreamID === false) {
+			return false;
+		}
 
 		// Поток нашли, читаем его в переменную
 		$wdStream = $this->getStreamById($wdStreamID);
@@ -54,7 +72,10 @@ class doc extends cfb {
 
 		// Находим в файле нужную нам табличку.
 		$tStreamID = $this->getStreamIdByName(intval($fWhichTblStm)."Table");
-		if ($tStreamID === false) { return false; }
+
+		if ($tStreamID === false) {
+			return false;
+		}
 
 		// И считываем из нећ поток в переменную
 		$tStream = $this->getStreamById($tStreamID);
@@ -93,9 +114,13 @@ class doc extends cfb {
 
 		// Теперь заполняем массив character positions, пока не наткнћмся
 		// на последний CP.
-		$cp = array(); $i = 0;
-		while (($cp[] = $this->getLong($i, $pieceTable)) != $lastCP)
+		$cp = [];
+		$i = 0;
+
+		while (($cp[] = $this->getLong($i, $pieceTable)) != $lastCP) {
 			$i += 4;
+		}
+
 		// Остаток идћт на PCD (piece descriptors)
 		$pcd = str_split(substr($pieceTable, $i + 4), 8);
 
@@ -113,17 +138,18 @@ class doc extends cfb {
 			// Получаем длину кусочка текста
 			$lcb = $cp[$i + 1] - $cp[$i];
 			// Если перед нами Unicode, то мы должны прочитать в два раза больше файлов
-			if (!$isANSI)
+			if (!$isANSI) {
 				$lcb *= 2;
-			// Если ANSI, то начать в два раза раньше.
-			else
+			} else { // Если ANSI, то начать в два раза раньше.
 				$fc /= 2;
+			}
 
 			// Читаем кусок с учћтом смещения и размера из WordDocument-потока
 			$part = substr($wdStream, $fc, $lcb);
 			// Если перед нами Unicode, то преобразовываем его в нормальное состояние
-			if (!$isANSI)
-				$part = $this->unicode_to_utf8($part);
+			if (!$isANSI) {
+				$part = $this->unicodeToUtf8($part);
+			}
 
 			// Добавляем кусочек к общему тексту
 			$text .= $part;
@@ -132,11 +158,15 @@ class doc extends cfb {
 		// Удаляем из файла вхождения с внедрћнными объектами
 		$text = preg_replace("/HYPER13 *(INCLUDEPICTURE|HTMLCONTROL)(.*)HYPER15/iU", "", $text);
 		$text = preg_replace("/HYPER13(.*)HYPER14(.*)HYPER15/iU", "$2", $text);
-		// Возвращаем результат
-		return $text;
+
+		return empty($text) ? null : $text;
 	}
-	// Функция преобразования из Unicode в UTF8, а то как-то не айс.
-	private function unicode_to_utf8($in) {
+
+	/**
+	 * {@inheritdoc}
+	 */
+	protected function unicodeToUtf8($in, $check = false)
+	{
 		$out = "";
 		// Идћм по двухбайтовым последовательностям
 		for ($i = 0; $i < strlen($in); $i += 2) {
@@ -145,8 +175,9 @@ class doc extends cfb {
 			// Если верхний байт нулевой, то перед нами ANSI
 			if (ord($cd[1]) == 0) {
 				// В случае, если ASCII-значение нижнего байта выше 32, то пишем как есть.
-				if (ord($cd[0]) >= 32)
+				if (ord($cd[0]) >= 32) {
 					$out .= $cd[0];
+				}
 
 				// В противном случае проверяем символы на внедрћнные команды (список можно
 				// дополнить и пополнить).
@@ -157,19 +188,12 @@ class doc extends cfb {
 					case 0x14: $out .= "HYPER14"; break;
 					case 0x15: $out .= "HYPER15"; break;
 				}
-			} else // Иначе преобразовываем в HTML entity
-				$out .= html_entity_decode("&#x".sprintf("%04x", $this->getShort(0, $cd)).";");
+			} else { // Иначе преобразовываем в HTML entity
+				$out .= html_entity_decode("&#x" . sprintf("%04x", $this->getShort(0, $cd)) . ";");
+			}
 		}
 
 		// И возвращаем результат
 		return $out;
 	}
 }
-
-// Функция для преобразования doc в plain-text. Для тех, кому "не нужны классы".
-function doc2text($filename) {
-	$doc = new doc;
-	$doc->read($filename);
-	return $doc->parse();
-}
-?>

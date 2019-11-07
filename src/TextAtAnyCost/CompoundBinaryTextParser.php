@@ -1,15 +1,17 @@
 <?php
-// Чтение WCBFF
-// Версия 0.2
-// Автор: Алексей Рембиш a.k.a Ramon
-// E-mail: alex@rembish.ru
-// Copyright 2009
 
-// Итак, мальчики-девочки, перед вами класс для работы с WCBFF, что расшифровывается, как
-// Windows Compound Binary File Format. Зачем это нужно? На основе этого
-// формата строятся такие "вкусные" файлы как .doc, .xls и .ppt. Поехали, смотреть, как
-// это устроено!
-class cfb {
+namespace TextAtAnyCost;
+
+/**
+ * Class CompoundBinaryTextParser
+ *
+ * @author Алексей Рембиш <alex@rembish.ru>
+ * @copyright 2009, Алексей Рембиш
+ * @version 0.2
+ * @package TextAtAnyCost
+ */
+abstract class CompoundBinaryTextParser extends AbstractTextParser
+{
 	// В эту переменную будет прочитано содержимое файла, который нужно расшифровать.
 	protected $data = "";
 
@@ -20,11 +22,11 @@ class cfb {
 	protected $miniSectorCutoff = 4096;
 
 	// Массив последовательности FAT-секторов и массив "файлов" файловой структуры файла
-	protected $fatChains = array();
-	protected $fatEntries = array();
+	protected $fatChains = [];
+	protected $fatEntries = [];
 
 	// Массив последовательностей Mini FAT-секторов и весь Mini FAT нашего файла
-	protected $miniFATChains = array();
+	protected $miniFATChains = [];
 	protected $miniFAT = "";
 
 	// Версия (3 или 4), а также способ записи чисел (little-endian)
@@ -43,7 +45,7 @@ class cfb {
 	private $fMiniFAT = 0;
 
 	// DIFAT: количество таковых секторов и смещение до 110 сектора (первые 109 в заголовке)
-	private $DIFAT = array();
+	private $DIFAT = [];
 	private $cDIFAT = 0;
 	private $fDIFAT = 0;
 
@@ -51,17 +53,19 @@ class cfb {
 	const ENDOFCHAIN = 0xFFFFFFFE;
 	const FREESECT   = 0xFFFFFFFF;
 
-	// Читаем файл во внутреннюю переменную класса
-	public function read($filename) {
-		$this->data = file_get_contents($filename);
-	}
-
-	public function parse() {
+	/**
+	 * @return bool
+	 */
+	public function parse()
+	{
 		// Первое что делаем, так проверяем - на самом ли деле перед нами CFB?
 		// Для это считываем первые 8 байт и проверяем на соответствие с двумя шаблонами: повсеместным и 
 		// древним - оставшимся по совместимости.
 		$abSig = strtoupper(bin2hex(substr($this->data, 0, 8)));
-		if ($abSig != "D0CF11E0A1B11AE1" && $abSig != "0E11FC0DD0CF11E0") { return false; }
+
+		if ($abSig != "D0CF11E0A1B11AE1" && $abSig != "0E11FC0DD0CF11E0") {
+			return false;
+		}
 
 		// Далее читаем заголовок файла;
 		$this->readHeader();
@@ -74,13 +78,16 @@ class cfb {
 		// получаем структуру "директории" внутри файла
 		$this->readDirectoryStructure();
 
-
 		// Ну и наконец проверяем наличие корневого вхождения в файловую структуру
 		// Данный поток обязательно должен присутствовать в файле, как минимум потому,
 		// что содержит ссылку на miniFAT-файла, который мы прочитываем в соответствующую
 		// переменную.
 		$reStreamID = $this->getStreamIdByName("Root Entry");
-		if ($reStreamID === false) { return false; }
+
+		if ($reStreamID === false) {
+			return false;
+		}
+
 		$this->miniFAT = $this->getStreamById($reStreamID, true);
 
 		// Удаляем ненужные нам ссылку на DIFAT-сектора, вместо них у нас есть полноценные
@@ -89,20 +96,40 @@ class cfb {
 
 		// После выполнения этих действий можно начинать работать с любым из "надстроечных"
 		// форматов Microsoft: doc, xls или ppt.
+		return true;
 	}
 
-	// Функция, которая находит (если находит) номер потока (stream'а) в структуре "директории"
-	// по его имени. В противном случае - false.
-	public function getStreamIdByName($name, $from = 0) {
-		for($i = $from; $i < count($this->fatEntries); $i++) {
-			if ($this->fatEntries[$i]["name"] == $name)
+	/**
+	 * Функция, которая находит (если находит) номер потока (stream'а) в структуре "директории"
+	 * по его имени. В противном случае - false.
+	 *
+	 * @param string $name
+	 * @param int $from
+	 *
+	 * @return bool|int
+	 */
+	public function getStreamIdByName($name, $from = 0)
+	{
+		for ($i = $from; $i < count($this->fatEntries); $i++) {
+			if ($this->fatEntries[$i]["name"] == $name) {
 				return $i;
+			}
 		}
+
 		return false;
 	}
-	// Функция получает на вход номер потока ($id) и, в качестве исключения для корневого
-	// вхождения, второй параметр. Возвращает бинарное содержимое данного потока.
-	public function getStreamById($id, $isRoot = false) {
+
+	/**
+	 * Функция получает на вход номер потока ($id) и, в качестве исключения для корневого
+	 * вхождения, второй параметр. Возвращает бинарное содержимое данного потока.
+	 *
+	 * @param int $id
+	 * @param bool $isRoot
+	 *
+	 * @return string
+	 */
+	public function getStreamById($id, $isRoot = false)
+	{
 		$entry = $this->fatEntries[$id];
 		// Получаем размер и позицию смещения на содержимое "текущего" файла.
 		$from = $entry["start"];
@@ -139,10 +166,6 @@ class cfb {
 				// Читаем сектор
 				$stream .= substr($this->data, $start, $ssize);
 				// Находим следующий сектор в массиве FAT-последовательностей
-				#if (!isset($this->fatChains[$from]))
-				#	$from = self::ENDOFCHAIN;
-				#elseif ($from != self::ENDOFCHAIN && $from != self::FREESECT)
-				#	$from = $this->fatChains[$from];
 				$from = isset($this->fatChains[$from]) ? $this->fatChains[$from] : self::ENDOFCHAIN;
 				// Пока не наткнёмся на конец последовательности.
 			} while ($from != self::ENDOFCHAIN);
@@ -151,8 +174,11 @@ class cfb {
 		return substr($stream, 0, $size);
 	}
 
-	// Функция читает нужные и важные данные из заголовка файла
-	private function readHeader() {
+	/**
+	 * Функция читает нужные и важные данные из заголовка файла.
+	 */
+	private function readHeader()
+	{
 		// Для начала узнаем как записаны данные в файле
 		$uByteOrder = strtoupper(bin2hex(substr($this->data, 0x1C, 2)));
 		// Что ж наверняка это будет little-endian запись, но на всякий случай проверим
@@ -183,15 +209,18 @@ class cfb {
 		$this->fDIFAT = $this->getLong(0x44);
 	}
 
-	// Итак, DIFAT. DIFAT показывает в каких секторах файла лежат
-	// описания цепочек FAT-секторов. Без этих цепочек мы не сможем
-	// прочитать содержимое потоков в сильно "фрагментированных"
-	// файлах
-	private function readDIFAT() {
-		$this->DIFAT = array();
+	/**
+	 * Итак, DIFAT. DIFAT показывает в каких секторах файла лежат
+	 * описания цепочек FAT-секторов. Без этих цепочек мы не сможем
+	 * прочитать содержимое потоков в сильно "фрагментированных" файлах.
+	 */
+	private function readDIFAT()
+	{
+		$this->DIFAT = [];
 		// Первые 109 ссылок на цепочки хранятся прямо в заголовке нашего файла
-		for ($i = 0; $i < 109; $i++)
+		for ($i = 0; $i < 109; $i++) {
 			$this->DIFAT[$i] = $this->getLong(0x4C + $i * 4);
+		}
 
 		// Там же мы смотрим, есть ли ещё где-нибудь ссылки на цепочки. В небольших
 		// файлах (до 8,5 Мб) их нет (хватает первых 109 ссылок), в больших - мы
@@ -216,15 +245,20 @@ class cfb {
 		}
 
 		// Для экономии удаляем конечные неиспользуемые ссылки.
-		while($this->DIFAT[count($this->DIFAT) - 1] == self::FREESECT)
+		while ($this->DIFAT[count($this->DIFAT) - 1] == self::FREESECT) {
 			array_pop($this->DIFAT);
+		}
 	}
-	// Так, DIFAT мы прочитали - теперь нужно ссылки на цепочки FAT-секторов
-	// превратить в реальные цепочки. Поэтому побегаем по файлу дальше.
-	private function readFATChains() {
+
+	/**
+	 * Так, DIFAT мы прочитали - теперь нужно ссылки на цепочки FAT-секторов
+	 * превратить в реальные цепочки. Поэтому побегаем по файлу дальше.
+	 */
+	private function readFATChains()
+	{
 		// Размер сектора
 		$size = 1 << $this->sectorShift;
-		$this->fatChains = array();
+		$this->fatChains = [];
 
 		// Обходим массив DIFAT.
 		for ($i = 0; $i < count($this->DIFAT); $i++) {
@@ -233,16 +267,20 @@ class cfb {
 			// Получаем цепочку FAT: индекс массива - это текущий сектор,
 			// значение элемента массива - индекс следующего элемента или
 			// ENDOFCHAIN - если это последний элемент цепочки.
-			for ($j = 0; $j < $size; $j += 4)
+			for ($j = 0; $j < $size; $j += 4) {
 				$this->fatChains[] = $this->getLong($from + $j);
+			}
 		}
 	}
-	// FAT-цепочки мы прочитали, теперь нужно прочитать MiniFAT-цепочки
-	// абсолютно также.
-	private function readMiniFATChains() {
+
+	/**
+	 * FAT-цепочки мы прочитали, теперь нужно прочитать MiniFAT-цепочки абсолютно также.
+	 */
+	private function readMiniFATChains()
+	{
 		// Размер сектора
 		$size = 1 << $this->sectorShift;
-		$this->miniFATChains = array();
+		$this->miniFATChains = [];
 
 		// Ищем первый сектор с MiniFAT-цепочками
 		$from = $this->fMiniFAT;
@@ -251,21 +289,25 @@ class cfb {
 			// находим смещение к сектору с MiniFat-цепочкой
 			$start = ($from + 1) << $this->sectorShift;
 			// Читаем цепочку из текущего сектора
-			for ($i = 0; $i < $size; $i += 4)
+			for ($i = 0; $i < $size; $i += 4) {
 				$this->miniFATChains[] = $this->getLong($start + $i);
+			}
 			// И если этот сектор не конечный в FAT-цепочке, то переходим дальше.
 			$from = isset($this->fatChains[$from]) ? $this->fatChains[$from] : self::ENDOFCHAIN;
 		}
 	}
 
-	// Самая важная функция, которая читает структуру "файлов" данного файла (уж простите
-	// за каламбур). В эту структуру записаны все объекты ФС данного файла.
-	private function readDirectoryStructure() {
+	/**
+	 * Самая важная функция, которая читает структуру "файлов" данного файла (уж простите
+	 * за каламбур). В эту структуру записаны все объекты ФС данного файла.
+	 */
+	private function readDirectoryStructure()
+	{
 		// Находим первый сектор с "файлами" ФС
 		$from = $this->fDir;
 		// Получаем размер сектора
 		$size = 1 << $this->sectorShift;
-		$this->fatEntries = array();
+		$this->fatEntries = [];
 		do {
 			// Находим сектор в файле
 			$start = ($from + 1) << $this->sectorShift;
@@ -275,9 +317,9 @@ class cfb {
 				// Получаем бинарный кусок
 				$entry = substr($this->data, $start + $i, 128);
 				// и обрабатываем его:
-				$this->fatEntries[] = array(
+				$this->fatEntries[] = [
 					// Получаем имя вхождения
-					"name" => $this->utf16_to_ansi(substr($entry, 0, $this->getShort(0x40, $entry))),
+					"name" => $this->utf16ToAnsi(substr($entry, 0, $this->getShort(0x40, $entry))),
 					// его тип - поток, пользовательские данные, пустой сектор и т.д.
 					"type" => ord($entry[0x42]),
 					// его цвет в Red-Black дереве
@@ -292,7 +334,7 @@ class cfb {
 					"start" => $this->getLong(0x74, $entry),
 					// размер содержимого
 					"size" => $this->getSomeBytes($entry, 0x78, 8),
-				);
+				];
 			}
 
 			// Потом находим следующий сектор с описаниями и прыгаем туда
@@ -301,46 +343,71 @@ class cfb {
 		} while ($from != self::ENDOFCHAIN);
 
 		// Удаляем конечные "пустые" вхождения, если таковые есть.
-		while($this->fatEntries[count($this->fatEntries) - 1]["type"] == 0)
+		while($this->fatEntries[count($this->fatEntries) - 1]["type"] == 0) {
 			array_pop($this->fatEntries);
-
-		#dump($this->fatEntries, false);
+		}
 	}
 
-	// Вспомогательная функция для получения адекватного имени текущего вхождения в ФС.
-	// Замечу, что имена записаны в Unicode.
-	private function utf16_to_ansi($in) {
+	/**
+	 * Вспомогательная функция для получения адекватного имени текущего вхождения в ФС.
+	 * Замечу, что имена записаны в Unicode.
+	 *
+	 * @param string $in
+	 *
+	 * @return string
+	 */
+	private function utf16ToAnsi($in)
+	{
 		$out = "";
-		for ($i = 0; $i < strlen($in); $i += 2)
+
+		for ($i = 0; $i < strlen($in); $i += 2) {
 			$out .= chr($this->getShort($i, $in));
+		}
+
 		return trim($out);
 	}
 
-	// Функция преобразования из Unicode в UTF8, а то как-то не айс.
-	protected function unicode_to_utf8($in, $check = false) {
+	/**
+	 * Функция преобразования из Unicode в UTF8, а то как-то не айс.
+	 *
+	 * @param string $in
+	 * @param bool $check
+	 *
+	 * @return string
+	 */
+	protected function unicodeToUtf8($in, $check = false)
+	{
 		$out = "";
+
 		if ($check && strpos($in, chr(0)) !== 1) {
 			while (($i = strpos($in, chr(0x13))) !== false) {
 				$j = strpos($in, chr(0x15), $i + 1);
-				if ($j === false)
+
+				if ($j === false) {
 					break;
+				}
 
 				$in = substr_replace($in, "", $i, $j - $i);
 			}
+
 			for ($i = 0; $i < strlen($in); $i++) {
 				if (ord($in[$i]) >= 32) {}
 				elseif ($in[$i] == ' ' || $in[$i] == '\n') {}
-				else
+				else {
 					$in = substr_replace($in, "", $i, 1);
+				}
 			}
+
 			$in = str_replace(chr(0), "", $in);
 
 			return $in;
 		} elseif ($check) {
 			while (($i = strpos($in, chr(0x13).chr(0))) !== false) {
 				$j = strpos($in, chr(0x15).chr(0), $i + 1);
-				if ($j === false)
+
+				if ($j === false) {
 					break;
+				}
 
 				$in = substr_replace($in, "", $i, $j - $i);
 			}
@@ -349,24 +416,28 @@ class cfb {
 
 		// Идём по двухбайтовым последовательностям
 		$skip = false;
+
 		for ($i = 0; $i < strlen($in); $i += 2) {
 			$cd = substr($in, $i, 2);
+
 			if ($skip) {
-				if (ord($cd[1]) == 0x15 || ord($cd[0]) == 0x15)
+				if (ord($cd[1]) == 0x15 || ord($cd[0]) == 0x15) {
 					$skip = false;
+				}
+
 				continue;
 			}
 
 			// Если верхний байт нулевой, то перед нами ANSI
 			if (ord($cd[1]) == 0) {
 				// В случае, если ASCII-значение нижнего байта выше 32, то пишем как есть.
-				if (ord($cd[0]) >= 32)
+				if (ord($cd[0]) >= 32) {
 					$out .= $cd[0];
-				elseif ($cd[0] == ' ' || $cd[0] == '\n')
+				} elseif ($cd[0] == ' ' || $cd[0] == '\n') {
 					$out .= $cd[0];
-				elseif (ord($cd[0]) == 0x13)
+				} elseif (ord($cd[0]) == 0x13) {
 					$skip = true;
-				else {
+				} else {
 					continue;
 					// В противном случае проверяем символы на внедрённые команды (список можно
 					// дополнить и пополнить).
@@ -383,8 +454,10 @@ class cfb {
 				if (ord($cd[1]) == 0x13) {
 					echo "@";
 					$skip = true;
+
 					continue;
 				}
+
 				$out .= "&#x".sprintf("%04x", $this->getShort(0, $cd)).";";
 			}
 		}
@@ -393,29 +466,57 @@ class cfb {
 		return $out;
 	}
 
-	// Вспомогательная функция для чтения некоторого количества байт из строки
-	// с учётом порядка байтов и преобразования значение в число.
-	protected function getSomeBytes($data, $from, $count) {
+	/**
+	 * Вспомогательная функция для чтения некоторого количества байт из строки
+	 * с учётом порядка байтов и преобразования значение в число.
+	 *
+	 * @param string|null $data
+	 * @param int $from
+	 * @param int $count
+	 *
+	 * @return float|int
+	 */
+	protected function getSomeBytes($data, $from, $count)
+	{
 		// По умолчанию читаем данные из переменной класса $data.
-		if ($data === null)
+		if ($data === null) {
 			$data = $this->data;
+		}
 
 		// Читаем кусок
 		$string = substr($data, $from, $count);
 		// В случае обратного порядка байтов - переворачиваем кусок
-		if ($this->isLittleEndian)
+		if ($this->isLittleEndian) {
 			$string = strrev($string);
+		}
 
 		// Перекодируем из бинарного формата в hex'ы, а потом в число.
 		return hexdec(bin2hex($string));
 	}
-	// Читаем слово из переменной (по умолчанию из this->data)
-	protected function getShort($from, $data = null) {
+
+	/**
+	 * Читаем слово из переменной (по умолчанию из this->data)
+	 *
+	 * @param int $from
+	 * @param string|null $data
+	 *
+	 * @return float|int
+	 */
+	protected function getShort($from, $data = null)
+	{
 		return $this->getSomeBytes($data, $from, 2);
 	}
-	// Читаем двойное слово из переменной (по умолчанию из this->data)
-	protected function getLong($from, $data = null) {
+
+	/**
+	 * Читаем двойное слово из переменной (по умолчанию из this->data)
+	 *
+	 * @param
+	 * @param string|null $data
+	 *
+	 * @return float|int
+	 */
+	protected function getLong($from, $data = null)
+	{
 		return $this->getSomeBytes($data, $from, 4);
 	}
 }
-?>
